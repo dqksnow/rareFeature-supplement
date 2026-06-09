@@ -15,6 +15,7 @@ ssp.rareF.glm <- function(formula,
                     balance.Y.ssp = FALSE,
                     balance.Y.all = FALSE,
                     combine = TRUE,
+                    combine.method = 'union',
                     record.stage.time = FALSE,
                     rareFeature.index = NULL,
                     rareThreshold = 0.09,
@@ -59,6 +60,10 @@ ssp.rareF.glm <- function(formula,
                                       'Uni', 'BL-Uni',
                                       'R-Lopt', 'BL-Lopt'))
   sampling.method <- match.arg(sampling.method, c('poisson'))
+  combine.method <- match.arg(
+    combine.method,
+    c('union', 'samples', 'estimators')
+  )
   objective.weight.plt <- match.arg(
     objective.weight.plt,
     c('weighted', 'unweighted')
@@ -168,6 +173,7 @@ ssp.rareF.glm <- function(formula,
                  balance.Y.ssp = balance.Y.ssp,
                  balance.Y.all = balance.Y.all,
                  combine = combine,
+                 combine.method = combine.method,
                  rareFeature.index = rareFeature.index, 
                  control = control
                  )
@@ -242,9 +248,64 @@ ssp.rareF.glm <- function(formula,
     index.cmb.union <- combining.union.results$index.cmb
     beta.cmb.union <- combining.union.results$beta.cmb
     cov.cmb.union <- combining.union.results$cov.cmb
+    
+    stage_start <- proc.time()[3]
+    combining.samples.results <- combining.samples(
+      inputs,
+      index.plt = index.plt,
+      index.ssp = index.ssp,
+      pi.plt = pi.plt,
+      pi.ssp = pi.ssp,
+      n.plt = n.plt,
+      n.ssp = n.ssp
+    )
+    stage.time["combining.samples"] <- proc.time()[3] - stage_start
+    index.cmb.samples <- combining.samples.results$index.cmb
+    beta.cmb.samples <- combining.samples.results$beta.cmb
+    cov.cmb.samples <- combining.samples.results$cov.cmb
+    
+    stage_start <- proc.time()[3]
+    combining.estimators.results <- combining.estimators(
+      inputs,
+      ddL.plt = ddL.plt,
+      ddL.ssp = ddL.ssp,
+      cov.score.plt = cov.score.plt,
+      cov.score.ssp = cov.score.ssp,
+      n.plt = n.plt,
+      n.ssp = n.ssp,
+      beta.plt = beta.plt,
+      beta.ssp = beta.ssp
+    )
+    stage.time["combining.estimators"] <- proc.time()[3] - stage_start
+    beta.cmb.estimators <- combining.estimators.results$beta.cmb
+    cov.cmb.estimators <- combining.estimators.results$cov.cmb
+    
+    selected.combine <- switch(
+      combine.method,
+      union = list(
+        coef = beta.cmb.union,
+        cov = cov.cmb.union,
+        index = index.cmb.union
+      ),
+      samples = list(
+        coef = beta.cmb.samples,
+        cov = cov.cmb.samples,
+        index = index.cmb.samples
+      ),
+      estimators = list(
+        coef = beta.cmb.estimators,
+        cov = cov.cmb.estimators,
+        index = NULL
+      )
+    )
+    beta.cmb <- selected.combine$coef
+    cov.cmb <- selected.combine$cov
+    index.cmb <- selected.combine$index
 
     ## prepare for displaying results 
-    names(beta.cmb.union) <- names(beta.ssp) <- names(beta.plt) <- colnames(X)
+    names(beta.cmb.union) <- names(beta.cmb.samples) <-
+      names(beta.cmb.estimators) <- names(beta.cmb) <-
+      names(beta.ssp) <- names(beta.plt) <- colnames(X)
     
     
     
@@ -266,10 +327,16 @@ ssp.rareF.glm <- function(formula,
     results <- list(model.call = model.call,
                     coef.plt = beta.plt,
                     coef.ssp = beta.ssp,
+                    coef.cmb = beta.cmb,
                     coef.cmb.union = beta.cmb.union,
+                    coef.cmb.samples = beta.cmb.samples,
+                    coef.cmb.estimators = beta.cmb.estimators,
                     cov.plt = cov.plt,
                     cov.ssp = cov.ssp,
+                    cov.cmb = cov.cmb,
                     cov.cmb.union = cov.cmb.union,
+                    cov.cmb.samples = cov.cmb.samples,
+                    cov.cmb.estimators = cov.cmb.estimators,
                     N = N,
                     family.name = family$family,
                     subsample.size.expect = subsample.size.expect,
@@ -303,7 +370,11 @@ ssp.rareF.glm <- function(formula,
                     
                     index.plt = index.plt,
                     index.ssp = index.ssp,
+                    index.cmb = index.cmb,
                     index.cmb.union = index.cmb.union,
+                    index.cmb.samples = index.cmb.samples,
+                    index.cmb.estimators = NULL,
+                    combine.method = combine.method,
                     rareFeature.index = rareFeature.index,
                     comp.time = comp.time,
                     stage.time = if (record.stage.time) stage.time else NULL,
@@ -340,10 +411,16 @@ ssp.rareF.glm <- function(formula,
     results <- list(model.call = model.call,
                     coef.plt = beta.uni,
                     coef.ssp = beta.uni,
+                    coef.cmb = beta.uni,
                     coef.cmb.union = beta.uni,
+                    coef.cmb.samples = beta.uni,
+                    coef.cmb.estimators = beta.uni,
                     cov.plt = cov.uni,
                     cov.ssp = cov.uni,
+                    cov.cmb = cov.uni,
                     cov.cmb.union = cov.uni,
+                    cov.cmb.samples = cov.uni,
+                    cov.cmb.estimators = cov.uni,
                     N = N,
                     family.name = family$family,
                     subsample.size.expect = inputs$n.uni,
@@ -378,7 +455,11 @@ ssp.rareF.glm <- function(formula,
                     
                     index.plt = index.uni,
                     index.ssp = index.uni,
+                    index.cmb = index.uni,
                     index.cmb.union = index.uni,
+                    index.cmb.samples = index.uni,
+                    index.cmb.estimators = index.uni,
+                    combine.method = combine.method,
                     rareFeature.index = rareFeature.index,
                     comp.time = comp.time,
                     stage.time = if (record.stage.time) stage.time else NULL,

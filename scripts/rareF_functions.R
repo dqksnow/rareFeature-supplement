@@ -671,6 +671,85 @@ subsample.estimate <- function(inputs,
          )
 }
 ###############################################################################
+combining.estimators <- function(inputs,
+                                 ddL.plt,
+                                 ddL.ssp,
+                                 cov.score.plt,
+                                 cov.score.ssp,
+                                 Lambda.plt = NULL,
+                                 Lambda.ssp = NULL,
+                                 n.plt,
+                                 n.ssp,
+                                 beta.plt,
+                                 beta.ssp) {
+  Info.plt <- n.plt * ddL.plt
+  Info.ssp <- n.ssp * ddL.ssp
+  Info.solve <- solve(Info.plt + Info.ssp)
+  beta.cmb <- c(
+    Info.solve %*% (Info.plt %*% beta.plt + Info.ssp %*% beta.ssp)
+  )
+  cov.cmb <- Info.solve %*%
+    (n.plt * cov.score.plt + n.ssp * cov.score.ssp) %*%
+    Info.solve
+
+  return(list(
+    beta.cmb = beta.cmb,
+    cov.cmb = cov.cmb
+  ))
+}
+###############################################################################
+combining.samples <- function(inputs,
+                              index.plt,
+                              index.ssp,
+                              pi.plt,
+                              pi.ssp,
+                              n.plt,
+                              n.ssp,
+                              ...) {
+  X <- inputs$X
+  Y <- inputs$Y
+  N <- inputs$N
+  family <- inputs$family
+
+  index.cmb <- c(index.plt, index.ssp)
+  n.cmb <- length(index.cmb)
+
+  pi.cmb <- c(
+    (n.cmb / n.plt) * pi.plt,
+    (n.cmb / n.ssp) * pi.ssp
+  )
+  X.cmb <- X[index.cmb, , drop = FALSE]
+  Y.cmb <- Y[index.cmb]
+  w.cmb <- 1 / pi.cmb
+
+  results.cmb <- glm.coef.estimate(X.cmb,
+                                   Y.cmb,
+                                   weights = w.cmb,
+                                   family = family,
+                                   ...)
+  beta.cmb <- results.cmb$beta
+  linear.predictor.cmb <- as.vector(X.cmb %*% beta.cmb)
+
+  ddL.cmb <- (1 / N) * ddL(linear.predictor.cmb,
+                           X.cmb,
+                           weights = w.cmb,
+                           family = family)
+  cov.score.cmb <- (n.cmb / (N^2)) * cov.score(linear.predictor.cmb,
+                                               X.cmb,
+                                               Y.cmb,
+                                               weights = w.cmb^2,
+                                               family = family)
+
+  ddL.cmb.inv <- solve(ddL.cmb)
+  cov.cmb <- (1 / n.cmb) * ddL.cmb.inv %*% cov.score.cmb %*% ddL.cmb.inv
+
+  return(list(
+    beta.cmb = beta.cmb,
+    cov.cmb = cov.cmb,
+    index.cmb = index.cmb
+  ))
+}
+###############################################################################
 combining.union <- function(inputs,
                       index.plt, # dim: n.plt
                       index.ssp, # dim: n.ssp
